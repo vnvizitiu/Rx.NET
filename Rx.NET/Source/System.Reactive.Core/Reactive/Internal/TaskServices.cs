@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information. 
 
 #if !NO_TPL
 
@@ -15,7 +17,9 @@ namespace System.Reactive
 
         private static ITaskServices Initialize()
         {
+#pragma warning disable CS0618 // Type or member is obsolete
             return PlatformEnlightenmentProvider.Current.GetService<ITaskServices>() ?? new DefaultTaskServices();
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         public static bool TrySetCanceled<T>(this TaskCompletionSource<T> tcs, CancellationToken token)

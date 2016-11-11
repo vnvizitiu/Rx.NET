@@ -1,5 +1,7 @@
-﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information. 
+using Xunit;
 using System;
 
 namespace Tests
@@ -23,12 +25,12 @@ namespace Tests
             }
             catch (T ex)
             {
-                Assert.IsTrue(assert(ex));
+                Assert.True(assert(ex));
 
                 failed = true;
             }
 
-            Assert.IsTrue(failed);
+            Assert.True(failed);
         }
 
         internal static void SucceedOrFailProper(Action action)

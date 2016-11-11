@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information. 
 
 #if !NO_PERF
 using System.Reactive.Disposables;
@@ -90,7 +92,7 @@ namespace System.Reactive.Subjects
         public override void OnError(Exception error)
         {
             if (error == null)
-                throw new ArgumentNullException("error");
+                throw new ArgumentNullException(nameof(error));
 
             var oldObserver = default(IObserver<T>);
             var newObserver = new DoneObserver<T> { Exception = error };
@@ -130,7 +132,7 @@ namespace System.Reactive.Subjects
         public override IDisposable Subscribe(IObserver<T> observer)
         {
             if (observer == null)
-                throw new ArgumentNullException("observer");
+                throw new ArgumentNullException(nameof(observer));
 
             var oldObserver = default(IObserver<T>);
             var newObserver = default(IObserver<T>);
