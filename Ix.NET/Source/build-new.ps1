@@ -2,9 +2,12 @@ $scriptPath = split-path -parent $MyInvocation.MyCommand.Definition
 
 $configuration = "Release"
 
-$nuspecDir = Join-Path $scriptPath "NuSpecs"
 $isAppVeyor = Test-Path -Path env:\APPVEYOR
 $outputLocation = Join-Path $scriptPath "testResults"
+$xUnitConsolePath = ".\packages\xunit.runner.console\tools\net452\xunit.console.exe"
+$rootPath = (Resolve-Path .).Path
+$artifacts = Join-Path $rootPath "artifacts"
+
 
 $signClientSettings = Join-Path (Join-Path (Get-Item $scriptPath).Parent.Parent.FullName "scripts") "SignClientSettings.json"
 $hasSignClientSecret = !([string]::IsNullOrEmpty($env:SignClientSecret))
@@ -18,91 +21,91 @@ Remove-Item $outputPath -Force -Recurse
 md -Force $outputLocation | Out-Null
 
 if (!(Test-Path .\nuget.exe)) {
-    wget "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -outfile .\nuget.exe
+    wget "https://dist.nuget.org/win-x86-commandline/v4.1.0/nuget.exe" -outfile .\nuget.exe
 }
-
-$msbuild = Get-ItemProperty "hklm:\SOFTWARE\Microsoft\MSBuild\ToolsVersions\14.0"
-
-# TODO: if not found, bail out
-$msbuildExe = Join-Path $msbuild.MSBuildToolsPath "msbuild.exe"
 
 # get tools
-.\nuget.exe install -excludeversion gitversion.commandline -outputdirectory packages
-.\nuget.exe install -excludeversion SignClient -Version 0.5.0-beta4 -pre -outputdirectory packages
-.\nuget.exe install -excludeversion OpenCover -outputdirectory packages
+.\nuget.exe install -excludeversion SignClient -Version 0.7.0 -outputdirectory packages
+.\nuget.exe install -excludeversion JetBrains.dotCover.CommandLineTools -pre -outputdirectory packages
+.\nuget.exe install -excludeversion Nerdbank.GitVersioning -Version 2.0.21-beta -pre -outputdirectory packages
+.\nuget.exe install -excludeversion xunit.runner.console -pre -outputdirectory packages
 .\nuget.exe install -excludeversion ReportGenerator -outputdirectory packages
-.\nuget.exe install -excludeversion coveralls.io -outputdirectory packages
-
+#.\nuget.exe install -excludeversion coveralls.io -outputdirectory packages
+.\nuget.exe install -excludeversion coveralls.io.dotcover -outputdirectory packages
 
 #update version
-.\packages\gitversion.commandline\tools\gitversion.exe /l console /output buildserver /updateassemblyinfo
+$versionObj = .\packages\Nerdbank.GitVersioning\tools\get-version.ps1
+$packageSemVer = $versionObj.NuGetPackageVersion
 
-$versionObj = .\packages\gitversion.commandline\tools\gitversion.exe | ConvertFrom-Json 
+Write-Host "Building $packageSemVer" -Foreground Green
 
-$version = $versionObj.MajorMinorPatch
-$tag = $versionObj.PreReleaseLabel
-$preRelNum = $versionObj.CommitsSinceVersionSourcePadded
-$preRelNum2 = $versionObj.PreReleaseNumber
+New-Item -ItemType Directory -Force -Path $artifacts
 
-if($tag -ne ""){
-  if($preRelNum -ne "00000") {
-    $version = "$version-$tag-$preRelNum"
-  }
-  elseif ($preRelNum2 -ne "0") {
-    $version = "$version-$tag$preRelNum2"
-  }
-  else {
-    $version = "$version-$tag"
-  }
-}
 
-Write-Host "Version: $version"
+Write-Host "Restoring packages for $scriptPath\Ix.NET.sln" -Foreground Green
+# use nuget.exe to restore on the legacy proj type
+#.\nuget.exe restore "$scriptPath\System.Interactive.Tests.Uwp.DeviceRunner\System.Interactive.Tests.Uwp.DeviceRunner.csproj"
+dotnet restore "$scriptPath\Ix.NET.sln" -c $configuration 
+# Force a restore again to get proper version numbers https://github.com/NuGet/Home/issues/4337
+dotnet restore "$scriptPath\Ix.NET.sln"
 
-Write-Host "Restoring packages" -Foreground Green
-dotnet restore $scriptPath | out-null
+Write-Host "Building $scriptPath\Ix.NET.sln" -Foreground Green
 
-Write-Host "Building projects" -Foreground Green
-$projects = gci $scriptPath -Directory `
-   | Where-Object { ($_.Name -notlike "*DeviceRunner") -and (Test-Path (Join-Path $_.FullName "project.json"))  } `
+# Using MSBuild here since th UWP test project cannot be built by the dotnet CLI
+#msbuild "$scriptPath\Ix.NET.sln" /m /t:build /p:Configuration=$configuration 
 
-foreach ($project in $projects) {
-  dotnet build -c "$configuration" $project.FullName
-  if ($LastExitCode -ne 0) { 
-    Write-Host "Error building project $project" -Foreground Red
-    if($isAppVeyor) {
-      $host.SetShouldExit($LastExitCode)
-    }  
-  } 
-}
 
 Write-Host "Building Packages" -Foreground Green
-$nuspecs = ls $nuspecDir\*.nuspec | Select -ExpandProperty FullName
+dotnet pack "$scriptPath\System.Interactive\System.Interactive.csproj" -c $configuration /p:PackageOutputPath=$artifacts /p:NoPackageAnalysis=true
+if ($LastExitCode -ne 0) { 
+        Write-Host "Error with build" -Foreground Red
+        if($isAppVeyor) {
+          $host.SetShouldExit($LastExitCode)
+          exit $LastExitCode
+        }  
+}
 
-New-Item -ItemType Directory -Force -Path .\artifacts
+dotnet pack "$scriptPath\System.Interactive.Async\System.Interactive.Async.csproj" -c $configuration /p:PackageOutputPath=$artifacts /p:NoPackageAnalysis=true
+if ($LastExitCode -ne 0) { 
+        Write-Host "Error with build" -Foreground Red
+        if($isAppVeyor) {
+          $host.SetShouldExit($LastExitCode)
+          exit $LastExitCode
+        }  
+}
 
-foreach ($nuspec in $nuspecs) {
-   .\nuget pack $nuspec -symbols -Version $version -Properties "Configuration=$configuration" -MinClientVersion 2.12 -outputdirectory .\artifacts
-   if ($LastExitCode -ne 0) { 
-    Write-Host "Error packing NuGet $nuspec" -Foreground Red
-    if($isAppVeyor) {
-      $host.SetShouldExit($LastExitCode)
-    }  
-  }
+dotnet pack "$scriptPath\System.Interactive.Async.Providers\System.Interactive.Async.Providers.csproj" -c $configuration /p:PackageOutputPath=$artifacts /p:NoPackageAnalysis=true
+if ($LastExitCode -ne 0) { 
+        Write-Host "Error with build" -Foreground Red
+        if($isAppVeyor) {
+          $host.SetShouldExit($LastExitCode)
+          exit $LastExitCode
+        }  
+}
+
+dotnet pack "$scriptPath\System.Interactive.Providers\System.Interactive.Providers.csproj" -c $configuration /p:PackageOutputPath=$artifacts /p:NoPackageAnalysis=true
+if ($LastExitCode -ne 0) { 
+        Write-Host "Error with build" -Foreground Red
+        if($isAppVeyor) {
+          $host.SetShouldExit($LastExitCode)
+          exit $LastExitCode
+        }  
 }
 
 if($hasSignClientSecret) {
-  Write-Host "Signing Packages" -Foreground Green
-  $nupgks = ls .\artifacts\*Interact*.nupkg | Select -ExpandProperty FullName
+  Write-Host "Signing Packages" -Foreground Green	
+  $nupgks = ls $artifacts\*Interact*.nupkg | Select -ExpandProperty FullName
 
   foreach ($nupkg in $nupgks) {
     Write-Host "Submitting $nupkg for signing"
 
-    dotnet $signClientAppPath 'zip' -c $signClientSettings -i $nupkg -s $env:SignClientSecret -n 'Ix.NET' -d 'Interactive Extensions for .NET' -u 'http://reactivex.io/' 
+    dotnet $signClientAppPath 'sign' -c $signClientSettings -i $nupkg -s $env:SignClientSecret -n 'Ix.NET' -d 'Interactive Extensions for .NET' -u 'http://reactivex.io/' 
 
     if ($LastExitCode -ne 0) { 
         Write-Host "Error signing $nupkg" -Foreground Red
         if($isAppVeyor) {
           $host.SetShouldExit($LastExitCode)
+          exit $LastExitCode
         }  
     }
     Write-Host "Finished signing $nupkg"
@@ -115,29 +118,27 @@ if($hasSignClientSecret) {
 Write-Host "Running tests" -Foreground Green
 $testDirectory = Join-Path $scriptPath "Tests"  
 
-# Execute OpenCover with a target of "dotnet test"
-.\packages\OpenCover\tools\OpenCover.Console.exe  -register:user -oldStyle -mergeoutput -target:dotnet.exe -targetdir:"$testDirectory" -targetargs:"test $testDirectory -c $configuration -notrait SkipCI=true" -output:"$outputFile" -skipautoprops -returntargetcode "-excludebyattribute:System.Diagnostics.DebuggerNonUserCodeAttribute;System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" -nodefaultfilters  -hideskipped:All -filter:"+[*]* -[*.Tests]* -[Tests]* -[xunit.*]* -[FluentAssertions.*]* -[FluentAssertions]*" 
+# OpenCover isn't working currently. So run tests on CI and coverage with JetBrains 
+
+# Use xUnit CLI as it's significantly faster than vstest (dotnet test)
+$dotnet = "$env:ProgramFiles\dotnet\dotnet.exe"
+.\packages\JetBrains.dotCover.CommandLineTools\tools\dotCover.exe analyse /targetexecutable="$dotnet" /targetworkingdir="$testDirectory" /targetarguments="xunit -c $configuration" /Filters="+:module=System.Interactive;+:module=System.Interactive.Async;+:module=System.Interactive.Providers;+:module=System.Interactive.Async.Providers;-:type=Xunit*" /DisableDefaultFilters /ReturnTargetExitCode /AttributeFilters="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" /output="$outputFile" /ReportType=DetailedXML /HideAutoProperties
 
 if ($LastExitCode -ne 0) { 
-    Write-Host "Error with tests" -Foreground Red
-    if($isAppVeyor) {
-      $host.SetShouldExit($LastExitCode)
-    }  
+	Write-Host "Error with tests" -Foreground Red
+	if($isAppVeyor) {
+	  $host.SetShouldExit($LastExitCode)
+	  exit $LastExitCode
+	}  
 }
-
 
 # Either display or publish the results
 if ($env:CI -eq 'True')
 {
-  .\packages\coveralls.io\tools\coveralls.net.exe  --opencover "$outputFile" --full-sources
+  .\packages\coveralls.io.dotcover\tools\coveralls.net.exe  -p DotCover "$outputFile"
 }
 else
 {
-    .\packages\ReportGenerator\tools\ReportGenerator.exe -reports:"$outputFile" -targetdir:"$outputPath"
-     &$outPutPath/index.htm
-}
-
-if ($env:CI -ne 'True') {
-  Write-Host "Reverting AssemblyInfo's" -Foreground Green
-  gci $scriptPath -re -in AssemblyInfo.cs | %{ git checkout $_ } 
+  .\packages\ReportGenerator\tools\ReportGenerator.exe -reports:"$outputFile" -targetdir:"$outputPath"
+  &"$outPutPath/index.htm"
 }
