@@ -1,20 +1,11 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>8.0.30703</ProductVersion>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{8E4B04F0-915E-48F9-9796-76278C6094BD}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>System.Interactive</RootNamespace>
-    <AssemblyName>System.Interactive</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <ProductSignAssembly>true</ProductSignAssembly>
-    <NoWarn>1591</NoWarn>
-    <TargetFrameworkProfile />
+    <Description>Interactive Extensions Main Library used to express queries over enumerable sequences.</Description>
+    <AssemblyTitle>Interactive Extensions - Main Library</AssemblyTitle>
+    <Authors>Microsoft</Authors>
+    <TargetFrameworks>net45;netstandard1.0</TargetFrameworks>
+    <PackageTags>Ix;Interactive;Extensions;Enumerable</PackageTags>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug40|AnyCPU'">
     <NoWarn>1591</NoWarn>
@@ -83,17 +74,9 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Observable" Condition=" '$(BuildFlavor)' == 'SILVERLIGHTM7' " />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="IAwaitable.cs" />
-    <Compile Include="EnumerableEx.Imperative.cs" />
-    <Compile Include="EnumerableEx.Multiple.cs" />
-    <Compile Include="EnumerableEx.Single.cs" />
-    <Compile Include="EnumerableEx.Exceptions.cs" />
-    <Compile Include="EnumerableEx.Creation.cs" />
-    <Compile Include="EnumerableEx.Buffering.cs" />
-    <Compile Include="EnumerableEx.Aggregates.cs" />
-    <Compile Include="IYielder.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="Properties\System.Interactive.rd.xml" />
   </ItemGroup>
-  <Import Project="..\Import.targets" />
+
 </Project>

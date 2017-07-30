@@ -26,16 +26,34 @@ namespace HomoIconize
                 return;
             }
 
-            Process(root, "System.Reactive.Linq", "System.Reactive.Providers", @"Reactive\Linq\Qbservable.Generated.cs", "System.Reactive.Linq.Observable", "Qbservable", true);
+            Process(root, 
+                "System.Reactive.Linq", 
+                "System.Reactive.Providers", 
+                @"Reactive\Linq\Qbservable.Generated.cs", 
+                "System.Reactive.Linq.Observable", "Qbservable", true);
             Console.WriteLine();
 
-            Process(root, "System.Reactive.Experimental", "System.Reactive.Experimental", @"Reactive\Linq\QbservableEx.Generated.cs", "System.Reactive.Linq.ObservableEx", "QbservableEx");
+            Process(root, 
+                "System.Reactive.Experimental", 
+                "System.Reactive.Experimental", 
+                @"Reactive\Linq\QbservableEx.Generated.cs", 
+                "System.Reactive.Linq.ObservableEx", "QbservableEx");            
             Console.WriteLine();
+
+            Process(root, 
+                "System.Reactive.Observable.Aliases", 
+                "System.Reactive.Observable.Aliases", 
+                "Qbservable.Aliases.Generated.cs",
+                "System.Reactive.Observable.Aliases.QueryLanguage", "QbservableAliases",
+                includeAsync: false, createAliases: true);
+            Console.WriteLine();
+
+            Console.WriteLine("Processing complete, press enter to continue.");
+            Console.ReadLine();
         }
 
-        static void Process(string root, string sourceAssembly, string targetAssembly, string targetFile, string sourceTypeName, string targetTypeName, bool includeAsync = false)
+        static void Process(string root, string sourceAssembly, string targetAssembly, string targetFile, string sourceTypeName, string targetTypeName, bool includeAsync = false, bool createAliases = false)
         {
-
             var rxRoot = Path.Combine(root, sourceAssembly);
             if (!Directory.Exists(rxRoot))
             {
@@ -50,14 +68,14 @@ namespace HomoIconize
                 return;
             }
 
-            var dll = Path.Combine(rxRoot, @"bin\debug40\" + sourceAssembly + ".dll");
+            var dll = Path.Combine(rxRoot, @"..\bin\debug40\" + sourceAssembly + ".dll");
             if (!File.Exists(dll))
             {
                 Console.WriteLine("Error:  Could not find file \"" + dll + "\"");
                 return;
             }
 
-            var xml = Path.Combine(rxRoot, @"bin\debug40\" + sourceAssembly + ".xml");
+            var xml = Path.Combine(rxRoot, @"..\bin\debug40\" + sourceAssembly + ".xml");
             if (!File.Exists(xml))
             {
                 Console.WriteLine("Error:  Could not find file \"" + xml + "\"");
@@ -71,7 +89,7 @@ namespace HomoIconize
                 return;
             }
 
-            Generate(dll, xml, qbsgen, sourceTypeName, targetTypeName, includeAsync);
+            Generate(dll, xml, qbsgen, sourceTypeName, targetTypeName, includeAsync, createAliases);
         }
 
         // Prototype interface to break dependencies. Only used for ToString2 ultimately.
@@ -79,12 +97,7 @@ namespace HomoIconize
         {
         }
 
-        // Prototype interface to break dependencies. Only used for ToString2 ultimately.
-        interface IOrderedQbservable<T>
-        {
-        }
-
-        static void Generate(string input, string xml, string output, string sourceTypeName, string targetTypeName, bool includeAsync)
+        static void Generate(string input, string xml, string output, string sourceTypeName, string targetTypeName, bool includeAsync, bool createAliases)
         {
             var docs = XDocument.Load(xml).Root.Element("members").Elements("member").ToDictionary(m => m.Attribute("name").Value, m => m);
 
@@ -93,7 +106,6 @@ namespace HomoIconize
             var asm = Assembly.LoadFrom(input);
             var t = asm.GetType(sourceTypeName);
             _qbs = typeof(IQbservable<>); //asm.GetType("System.Reactive.Linq.IQbservable`1");
-            _oqbs = typeof(IOrderedQbservable<>);
 
             Console.WriteLine("Checking {0}...", output);
             var attr = File.GetAttributes(output);
@@ -133,15 +145,14 @@ namespace HomoIconize
             {
                 using (Out = new StreamWriter(fs))
                 {
-                    Generate(t, docs, targetTypeName, includeAsync);
+                    Generate(t, docs, targetTypeName, includeAsync, createAliases);
                 }
             }
         }
 
-        private const string OrderedObservableFullName = "System.Reactive.Linq.IOrderedObservable`1";
-        static Type _qbs, _oqbs;
+        static Type _qbs;
 
-        static void Generate(Type t, IDictionary<string, XElement> docs, string typeName, bool includeAsync)
+        static void Generate(Type t, IDictionary<string, XElement> docs, string typeName, bool includeAsync, bool createAliases)
         {
             WriteLine(
 @"/*
@@ -211,7 +222,7 @@ using System.Runtime.Remoting.Lifetime;
                             where ptgtd.GetGenericArguments().Count() > 5
                             select pi;
 
-                var isLargeArity = funky.Any();
+                //var isLargeArity = funky.Any();
 
                 var hasTask = p.Any(pa => ContainsTask(pa.ParameterType));
 
@@ -221,7 +232,7 @@ using System.Runtime.Remoting.Lifetime;
                     var d = ret.GetGenericTypeDefinition();
                     if (d.Name.StartsWith("IConnectableObservable") || d.Name.StartsWith("ListObservable"))
                         continue;
-                    if (d != typeof(IObservable<>) && d != typeof(IEnumerable<>) && d.FullName != OrderedObservableFullName)
+                    if (d != typeof(IObservable<>) && d != typeof(IEnumerable<>))
                         throw new InvalidOperationException("Invalid return type for " + m.Name);
                 }
                 else
@@ -236,13 +247,14 @@ using System.Runtime.Remoting.Lifetime;
                     if (f.ParameterType.IsGenericType)
                     {
                         var d = f.ParameterType.GetGenericTypeDefinition();
-                        if (d == typeof(IObservable<>) || d.FullName == OrderedObservableFullName) // Check - e.g. Amb    || d == typeof(IEnumerable<>))
+                        if (d == typeof(IObservable<>)) // Check - e.g. Amb    || d == typeof(IEnumerable<>))
                             hasProvider = false;
                     }
                 }
 
                 var nulls = new List<string>();
                 var pars = new List<string>();
+                var parNames = new List<string>();
                 var ptps = new List<string>();
                 var args = new List<string>();
 
@@ -255,6 +267,7 @@ using System.Runtime.Remoting.Lifetime;
                 else
                     args.Add("Expression.Constant(provider, typeof(IQbservableProvider))");
                 nulls.Add(firstName);
+                parNames.Add(firstName);
 
                 var rem = hasProvider ? p : p.Skip(1);
                 var isCreateAsync = false;
@@ -272,7 +285,7 @@ using System.Runtime.Remoting.Lifetime;
                     }
                     else
                     {
-                        var isObs = new Func<Type, bool>(tt => tt.IsGenericType && (tt.GetGenericTypeDefinition() == typeof(IObservable<>) || tt.FullName == OrderedObservableFullName));
+                        var isObs = new Func<Type, bool>(tt => tt.IsGenericType && tt.GetGenericTypeDefinition() == typeof(IObservable<>));
                         var isEnm = new Func<Type, bool>(tt => tt.IsGenericType && tt.GetGenericTypeDefinition() == typeof(IEnumerable<>));
                         if (isObs(pt) || pt.IsArray && isObs(pt.GetElementType()) || isEnm(pt) || pt.IsArray && isEnm(pt.GetElementType()))
                             args.Add("GetSourceExpression(" + q.Name + ")");
@@ -286,6 +299,7 @@ using System.Runtime.Remoting.Lifetime;
                         par = "params " + par;
                     pars.Add(par);
                     ptps.Add(pts);
+                    parNames.Add(q.Name);
 
                     if (!q.ParameterType.IsValueType && !q.ParameterType.IsGenericParameter)
                         nulls.Add(q.Name);
@@ -295,9 +309,7 @@ using System.Runtime.Remoting.Lifetime;
                 var requiresQueryProvider = ret.GetGenericTypeDefinition() == typeof(IQueryable<>);
                 if (requiresQueryProvider)
                     factory = "((IQueryProvider)" + factory + ")";
-                else if (!ret.IsGenericType || ret.GetGenericTypeDefinition() != _qbs)
-                    factory = "(" + ret.ToString2() + ")" + factory;
-
+                
                 var genArgs = m.GetGenericArguments().Select(a => a.ToString2()).ToList();
                 var g = genArgs.Count > 0 ? "<" + string.Join(", ", genArgs) + ">" : "";
                 var name = m.Name;
@@ -341,10 +353,10 @@ using System.Runtime.Remoting.Lifetime;
                 //    if (nulls.Contains("lease"))
                 //        nulls.Remove("lease");
                 //}
-                if (isLargeArity)
-                {
-                    WriteLine("#if !NO_LARGEARITY", true);
-                }
+                //if (isLargeArity)
+                //{
+                //    WriteLine("#if !NO_LARGEARITY", true);
+                //}
 
                 var isFep = m.Name == "FromEventPattern";
                 var isGenFep = isFep && m.GetGenericArguments().Any(a => a.Name == "TEventArgs");
@@ -413,6 +425,30 @@ using System.Runtime.Remoting.Lifetime;
                         }
                     }
 
+                    if (createAliases)
+                    {
+                        string underlying = "";
+
+                        switch (name)
+                        {
+                            case "Map": 
+                                underlying = "Select";
+                                break;
+                            case "FlatMap":
+                                underlying = "SelectMany";
+                                break;
+                            case "Filter": 
+                                underlying = "Where";
+                                break;
+                        }
+
+                        WriteLine("{");
+                        Indent();
+                        WriteLine("return Qbservable." + underlying + g + "(" + string.Join(", ", parNames) + ");");
+                        Outdent();
+                        WriteLine("}");
+                        continue;
+                    }
 
                     WriteLine("{");
                     Indent();
@@ -462,8 +498,8 @@ using System.Runtime.Remoting.Lifetime;
                     WriteLine("#endif", true);
                 if (isExp)
                     WriteLine("#endif", true);
-                if (isLargeArity)
-                    WriteLine("#endif", true);
+                //if (isLargeArity)
+                //    WriteLine("#endif", true);
                 WriteLine("");
             }
 
@@ -516,8 +552,8 @@ using System.Runtime.Remoting.Lifetime;
             {
                 for (int i = 0; i <= 16; i++)
                 {
-                    if (i == 5)
-                        WriteLine("#if !NO_LARGEARITY", true);
+                    //if (i == 5)
+                    //    WriteLine("#if !NO_LARGEARITY", true);
 
                     foreach (var withScheduler in new[] { false, true })
                     {
@@ -647,8 +683,8 @@ using System.Runtime.Remoting.Lifetime;
                         WriteLine("");
                     }
 
-                    if (i == 16)
-                        WriteLine("#endif", true);
+                    //if (i == 16)
+                    //    WriteLine("#endif", true);
                 }
             }
 
@@ -658,8 +694,8 @@ using System.Runtime.Remoting.Lifetime;
             {
                 for (int i = 0; i < 15; i++)
                 {
-                    if (i == 3)
-                        WriteLine("#if !NO_LARGEARITY", true);
+                    //if (i == 3)
+                    //    WriteLine("#if !NO_LARGEARITY", true);
 
                     var genArgs = default(string[]);
                     var lamPars = default(string[]);
@@ -787,8 +823,8 @@ using System.Runtime.Remoting.Lifetime;
                     WriteLine("}");
                     WriteLine("");
 
-                    if (i == 14)
-                        WriteLine("#endif", true);
+                    //if (i == 14)
+                    //    WriteLine("#endif", true);
                 }
             }
         }
@@ -820,10 +856,6 @@ using System.Runtime.Remoting.Lifetime;
                 if (g == typeof(IObservable<>))
                 {
                     return _qbs.MakeGenericType(type.GetGenericArguments());
-                }
-                else if (g.FullName == OrderedObservableFullName)
-                {
-                    return _oqbs.MakeGenericType(type.GetGenericArguments());
                 }
                 else if (g == typeof(IEnumerable<>))
                 {
